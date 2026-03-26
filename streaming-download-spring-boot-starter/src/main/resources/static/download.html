@@ -869,7 +869,7 @@
                     if (!localStorage.getItem('fs_api_unsupported_shown')) {
                         localStorage.setItem('fs_api_unsupported_shown', 'true');
                         this.showNotification(
-                            '当前浏览器不支持断点续传功能，将使用传统下载方式。建议使用 Chrome 130+ 版本。',
+                            '当前浏览器不支持断点续传功能，将使用传统下载方式。建议使用 Chrome 110+ 版本。',
                             'warning',
                             8000
                         );
@@ -1352,7 +1352,7 @@
                     // 修改提示文本
                     document.getElementById('browserWarning').innerHTML = `
                         <strong>浏览器兼容性提示：</strong>当前浏览器不支持断点续传功能（${capability.reason === 'API_NOT_FUNCTIONAL' ? 'API 不可用' : 'API 不支持'}）。
-                        建议使用 Chrome 130+ 浏览器以获得完整功能。
+                        建议使用 Chrome 110+ 浏览器以获得完整功能。
                     `;
                 }
             });
