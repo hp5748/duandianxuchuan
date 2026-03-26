@@ -500,36 +500,22 @@
             async _doCheck() {
                 // 1. 版本检测：Chrome 版本低于 110 直接降级
                 const chromeVersion = this.getChromeVersion();
+                console.log('[BrowserCapability] Chrome version:', chromeVersion);
                 if (chromeVersion > 0 && chromeVersion < this.MIN_CHROME_VERSION) {
+                    console.log('[BrowserCapability] Version too low, fallback to traditional download');
                     return { usable: false, reason: 'VERSION_TOO_LOW', version: chromeVersion };
                 }
 
                 // 2. 基础检测：API 是否存在
                 if (!window.showSaveFilePicker) {
+                    console.log('[BrowserCapability] API not supported');
                     return { usable: false, reason: 'API_NOT_SUPPORTED' };
                 }
 
-                // 3. 功能检测：尝试实际调用
-                try {
-                    const handle = await window.showSaveFilePicker({
-                        suggestedName: '.capability_test_' + Date.now()
-                    });
-
-                    // 4. 验证 getFile 是否正常
-                    await handle.getFile();
-
-                    // 5. 清理测试文件
-                    try { await handle.remove(); } catch (e) {}
-
-                    return { usable: true };
-                } catch (e) {
-                    if (e.name === 'AbortError') {
-                        // 用户取消 = API 可用
-                        return { usable: true };
-                    }
-                    // 其他错误 = API 不可用（如 Windows 7）
-                    return { usable: false, reason: 'API_NOT_FUNCTIONAL', error: e };
-                }
+                // 3. 版本 >= 110 且 API 存在，认为可用
+                // 不在初始化时弹出文件选择框，避免干扰用户
+                console.log('[BrowserCapability] API available, version OK');
+                return { usable: true };
             }
 
             // 重置检测状态（用于重新检测）
