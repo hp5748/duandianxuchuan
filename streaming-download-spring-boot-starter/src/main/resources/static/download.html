@@ -476,6 +476,14 @@
                 this._checked = false;
                 this._canUseFileSystemAPI = null;
                 this._checkPromise = null;
+                this.MIN_CHROME_VERSION = 110; // 最低支持的 Chrome 版本
+            }
+
+            // 获取 Chrome 版本号
+            getChromeVersion() {
+                const ua = navigator.userAgent;
+                const match = ua.match(/Chrome\/(\d+)/);
+                return match ? parseInt(match[1], 10) : 0;
             }
 
             // 惰性检测，只检测一次
@@ -490,21 +498,27 @@
             }
 
             async _doCheck() {
-                // 1. 基础检测：API 是否存在
+                // 1. 版本检测：Chrome 版本低于 110 直接降级
+                const chromeVersion = this.getChromeVersion();
+                if (chromeVersion > 0 && chromeVersion < this.MIN_CHROME_VERSION) {
+                    return { usable: false, reason: 'VERSION_TOO_LOW', version: chromeVersion };
+                }
+
+                // 2. 基础检测：API 是否存在
                 if (!window.showSaveFilePicker) {
                     return { usable: false, reason: 'API_NOT_SUPPORTED' };
                 }
 
-                // 2. 功能检测：尝试实际调用
+                // 3. 功能检测：尝试实际调用
                 try {
                     const handle = await window.showSaveFilePicker({
                         suggestedName: '.capability_test_' + Date.now()
                     });
 
-                    // 3. 验证 getFile 是否正常
+                    // 4. 验证 getFile 是否正常
                     await handle.getFile();
 
-                    // 4. 清理测试文件
+                    // 5. 清理测试文件
                     try { await handle.remove(); } catch (e) {}
 
                     return { usable: true };
@@ -868,8 +882,16 @@
                     // API 不可用，使用传统下载
                     if (!localStorage.getItem('fs_api_unsupported_shown')) {
                         localStorage.setItem('fs_api_unsupported_shown', 'true');
+                        let reasonText = '';
+                        if (capability.reason === 'VERSION_TOO_LOW') {
+                            reasonText = `当前 Chrome 版本 ${capability.version} 过低`;
+                        } else if (capability.reason === 'API_NOT_FUNCTIONAL') {
+                            reasonText = 'API 不可用';
+                        } else {
+                            reasonText = 'API 不支持';
+                        }
                         this.showNotification(
-                            '当前浏览器不支持断点续传功能，将使用传统下载方式。建议使用 Chrome 110+ 版本。',
+                            `当前浏览器不支持断点续传功能（${reasonText}），将使用传统下载方式。建议使用 Chrome 110+ 版本。`,
                             'warning',
                             8000
                         );
@@ -1349,9 +1371,17 @@
             manager.capability.checkFileSystemAccess().then(capability => {
                 if (!capability.usable) {
                     document.getElementById('browserWarning').classList.add('show');
-                    // 修改提示文本
+                    // 根据不同原因显示不同提示
+                    let reasonText = '';
+                    if (capability.reason === 'VERSION_TOO_LOW') {
+                        reasonText = `当前 Chrome 版本 ${capability.version} 过低`;
+                    } else if (capability.reason === 'API_NOT_FUNCTIONAL') {
+                        reasonText = 'API 不可用';
+                    } else {
+                        reasonText = 'API 不支持';
+                    }
                     document.getElementById('browserWarning').innerHTML = `
-                        <strong>浏览器兼容性提示：</strong>当前浏览器不支持断点续传功能（${capability.reason === 'API_NOT_FUNCTIONAL' ? 'API 不可用' : 'API 不支持'}）。
+                        <strong>浏览器兼容性提示：</strong>当前浏览器不支持断点续传功能（${reasonText}）。
                         建议使用 Chrome 110+ 浏览器以获得完整功能。
                     `;
                 }
