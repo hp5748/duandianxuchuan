@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: streaming-download-demo
+
+# 流式下载配置
+streaming:
+  download:
+    enabled: true
+    buffer-size: 8192
+    connect-timeout: 10000
+    read-timeout: 60000
+    max-file-size: -1
+    # 安全配置 - 开发环境允许所有域名
+    # 生产环境请配置具体的域名白名单
+    allow-all-domains: true
+    # allowed-domains:
+    #   - example.com
+    #   - cdn.example.org
