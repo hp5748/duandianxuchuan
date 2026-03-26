@@ -505,9 +505,11 @@
                 return data ? JSON.parse(data) : [];
             }
 
-            // 添加记录
+            // 添加记录（限制最大数量为50条）
             add(record) {
                 const records = this.list();
+                const MAX_RECORDS = 50;
+
                 const newRecord = {
                     id: this.generateId(),
                     url: record.url,
@@ -519,6 +521,13 @@
                     updateTime: Date.now()
                 };
                 records.unshift(newRecord);
+
+                // 超过限制时，删除旧记录及其 fileHandle
+                if (records.length > MAX_RECORDS) {
+                    const removed = records.splice(MAX_RECORDS);
+                    removed.forEach(r => this.removeFileHandle(r.id).catch(() => {}));
+                }
+
                 this.save(records);
                 return newRecord;
             }
@@ -809,32 +818,47 @@
                     // 流式读取和写入
                     this.reader = response.body.getReader();
                     let lastUpdate = Date.now();
+                    let lastHistoryUpdate = Date.now();
+                    let pendingWrites = 0;
+                    const MAX_PENDING_WRITES = 4; // 限制并发写入数量
 
                     while (true) {
                         const { done, value } = await this.reader.read();
 
                         if (done) break;
 
-                        await this.writer.write(value);
-                        this.loadedBytes += value.length;
-
-                        // 更新历史记录
-                        if (this.currentRecordId) {
-                            this.history.update(this.currentRecordId, {
-                                loadedBytes: this.loadedBytes,
-                                totalBytes: this.totalBytes,
-                                status: 'downloading'
-                            });
+                        // 等待写入完成，控制内存使用
+                        // 如果有太多待处理的写入，等待一下
+                        if (pendingWrites >= MAX_PENDING_WRITES) {
+                            await new Promise(resolve => setTimeout(resolve, 0));
                         }
+
+                        pendingWrites++;
+                        await this.writer.write(value);
+                        pendingWrites--;
+
+                        this.loadedBytes += value.length;
 
                         // 计算速率
                         this.speedCalc.addSample(this.loadedBytes);
 
-                        // 更新 UI（节流）
+                        // 更新 UI（节流：每200ms）
                         const now = Date.now();
-                        if (now - lastUpdate > 100) {
+                        if (now - lastUpdate > 200) {
                             this.updateUI();
                             lastUpdate = now;
+                        }
+
+                        // 更新历史记录（节流：每2秒，减少内存压力）
+                        if (now - lastHistoryUpdate > 2000) {
+                            if (this.currentRecordId) {
+                                this.history.update(this.currentRecordId, {
+                                    loadedBytes: this.loadedBytes,
+                                    totalBytes: this.totalBytes,
+                                    status: 'downloading'
+                                });
+                            }
+                            lastHistoryUpdate = now;
                         }
                     }
 
