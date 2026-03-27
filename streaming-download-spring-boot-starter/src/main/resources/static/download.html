@@ -342,76 +342,9 @@
             padding: 30px;
             font-size: 14px;
         }
-
-        /* 通知提示样式 */
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            max-width: 400px;
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        .notification.info {
-            background: #e3f2fd;
-            border: 1px solid #90caf9;
-            color: #1565c0;
-        }
-
-        .notification.warning {
-            background: #fff3e0;
-            border: 1px solid #ffcc80;
-            color: #e65100;
-        }
-
-        .notification.error {
-            background: #ffebee;
-            border: 1px solid #ef9a9a;
-            color: #c62828;
-        }
-
-        .notification-close {
-            background: transparent;
-            border: none;
-            font-size: 18px;
-            cursor: pointer;
-            opacity: 0.6;
-            padding: 0 0 0 10px;
-        }
-
-        .notification-close:hover {
-            opacity: 1;
-        }
-
-        /* 历史记录错误状态 */
-        .history-item-status.conflict {
-            background: #ffebee;
-            color: #c62828;
-        }
     </style>
 </head>
 <body>
-    <!-- 通知容器 -->
-    <div id="notificationContainer"></div>
-
     <div class="container">
         <h1>流式代理下载 - 断点续传 Demo</h1>
 
@@ -470,62 +403,6 @@
     </div>
 
     <script>
-        // 浏览器能力检测器
-        class BrowserCapability {
-            constructor() {
-                this._checked = false;
-                this._canUseFileSystemAPI = null;
-                this._checkPromise = null;
-                this.MIN_CHROME_VERSION = 110; // 最低支持的 Chrome 版本
-            }
-
-            // 获取 Chrome 版本号
-            getChromeVersion() {
-                const ua = navigator.userAgent;
-                const match = ua.match(/Chrome\/(\d+)/);
-                return match ? parseInt(match[1], 10) : 0;
-            }
-
-            // 惰性检测，只检测一次
-            async checkFileSystemAccess() {
-                if (this._checked) return this._canUseFileSystemAPI;
-                if (this._checkPromise) return this._checkPromise;
-
-                this._checkPromise = this._doCheck();
-                this._canUseFileSystemAPI = await this._checkPromise;
-                this._checked = true;
-                return this._canUseFileSystemAPI;
-            }
-
-            async _doCheck() {
-                // 1. 版本检测：Chrome 版本低于 110 直接降级
-                const chromeVersion = this.getChromeVersion();
-                console.log('[BrowserCapability] Chrome version:', chromeVersion);
-                if (chromeVersion > 0 && chromeVersion < this.MIN_CHROME_VERSION) {
-                    console.log('[BrowserCapability] Version too low, fallback to traditional download');
-                    return { usable: false, reason: 'VERSION_TOO_LOW', version: chromeVersion };
-                }
-
-                // 2. 基础检测：API 是否存在
-                if (!window.showSaveFilePicker) {
-                    console.log('[BrowserCapability] API not supported');
-                    return { usable: false, reason: 'API_NOT_SUPPORTED' };
-                }
-
-                // 3. 版本 >= 110 且 API 存在，认为可用
-                // 不在初始化时弹出文件选择框，避免干扰用户
-                console.log('[BrowserCapability] API available, version OK');
-                return { usable: true };
-            }
-
-            // 重置检测状态（用于重新检测）
-            reset() {
-                this._checked = false;
-                this._canUseFileSystemAPI = null;
-                this._checkPromise = null;
-            }
-        }
-
         // 速率计算器（滑动窗口算法）
         class SpeedCalculator {
             constructor(windowSize = 5) {
@@ -728,7 +605,6 @@
                 this.abortController = null;
                 this.reader = null;
                 this.writer = null;
-                this.capability = new BrowserCapability();  // 新增
 
                 // UI 元素
                 this.urlInput = document.getElementById('urlInput');
@@ -758,35 +634,6 @@
                 if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + ' MB';
                 if (bytes > 1024) return (bytes / 1024).toFixed(2) + ' KB';
                 return bytes.toFixed(0) + ' B';
-            }
-
-            // 显示通知提示
-            showNotification(message, type = 'info', duration = 5000) {
-                const container = document.getElementById('notificationContainer');
-
-                const notification = document.createElement('div');
-                notification.className = `notification ${type}`;
-
-                const icons = {
-                    info: 'ℹ️',
-                    warning: '⚠️',
-                    error: '❌'
-                };
-
-                notification.innerHTML = `
-                    <span>${icons[type] || 'ℹ️'} ${message}</span>
-                    <button class="notification-close" onclick="this.parentElement.remove()">×</button>
-                `;
-
-                container.appendChild(notification);
-
-                // 自动消失
-                if (duration > 0) {
-                    setTimeout(() => {
-                        notification.style.animation = 'slideIn 0.3s ease reverse';
-                        setTimeout(() => notification.remove(), 300);
-                    }, duration);
-                }
             }
 
             // 更新 UI
@@ -861,27 +708,9 @@
                     return;
                 }
 
-                // 检查浏览器能力（惰性检测）
-                const capability = await this.capability.checkFileSystemAccess();
-
-                if (!capability.usable) {
-                    // API 不可用，使用传统下载
-                    if (!localStorage.getItem('fs_api_unsupported_shown')) {
-                        localStorage.setItem('fs_api_unsupported_shown', 'true');
-                        let reasonText = '';
-                        if (capability.reason === 'VERSION_TOO_LOW') {
-                            reasonText = `当前 Chrome 版本 ${capability.version} 过低`;
-                        } else if (capability.reason === 'API_NOT_FUNCTIONAL') {
-                            reasonText = 'API 不可用';
-                        } else {
-                            reasonText = 'API 不支持';
-                        }
-                        this.showNotification(
-                            `当前浏览器不支持断点续传功能（${reasonText}），将使用传统下载方式。建议使用 Chrome 110+ 版本。`,
-                            'warning',
-                            8000
-                        );
-                    }
+                // 检查浏览器兼容性
+                if (!this.checkBrowserSupport()) {
+                    // 降级为传统下载
                     this.fallbackDownload(url);
                     return;
                 }
@@ -1149,7 +978,7 @@
                         <div class="history-item">
                             <div class="history-item-header">
                                 <span class="history-item-name">${this.escapeHtml(record.fileName)}</span>
-                                <span class="history-item-status ${record.error === 'CR_SWAP_CONFLICT' ? 'conflict' : record.status}">${record.error === 'CR_SWAP_CONFLICT' ? '临时文件冲突' : (statusLabels[record.status] || record.status)}</span>
+                                <span class="history-item-status ${record.status}">${statusLabels[record.status] || record.status}</span>
                             </div>
                             <div class="history-item-meta">
                                 <span>${this.formatBytes(record.loadedBytes)} / ${this.formatBytes(record.totalBytes)}</span>
@@ -1159,8 +988,9 @@
                                 <div class="history-item-progress-bar" style="width: ${progress}%"></div>
                             </div>
                             <div class="history-item-actions">
-                                ${this._shouldShowResumeButton(record) ? `<button class="btn btn-primary" onclick="downloadManager.resumeFromHistory('${record.id}')">继续</button>` : ''}
-                                ${this._shouldShowRedownloadButton(record) ? `<button class="btn btn-primary" onclick="downloadManager.redownload('${record.id}')">重新下载</button>` : ''}
+                                ${['paused', 'cancelled', 'error'].includes(record.status) && record.loadedBytes > 0 ? `<button class="btn btn-primary" onclick="downloadManager.resumeFromHistory('${record.id}')">继续</button>` : ''}
+                                ${record.status === 'completed' || (record.status === 'error' && record.loadedBytes === 0) ? `<button class="btn btn-primary" onclick="downloadManager.redownload('${record.id}')">重新下载</button>` : ''}
+                                ${record.status === 'downloading' ? `<button class="btn btn-warning" onclick="downloadManager.resumeFromHistory('${record.id}')">恢复</button>` : ''}
                                 <button class="btn btn-secondary" onclick="downloadManager.removeFromHistory('${record.id}')">删除</button>
                             </div>
                         </div>
@@ -1168,65 +998,11 @@
                 }).join('');
             }
 
-            // 判断是否显示继续按钮
-            _shouldShowResumeButton(record) {
-                // CR_SWAP_CONFLICT 错误不显示继续按钮
-                if (record.error === 'CR_SWAP_CONFLICT') return false;
-
-                // paused/cancelled/error 状态且有进度
-                if (['paused', 'cancelled', 'error'].includes(record.status) && record.loadedBytes > 0) {
-                    return true;
-                }
-
-                // downloading 状态（页面刷新后恢复）
-                if (record.status === 'downloading') {
-                    return true;
-                }
-
-                return false;
-            }
-
-            // 判断是否显示重新下载按钮
-            _shouldShowRedownloadButton(record) {
-                // 已完成
-                if (record.status === 'completed') return true;
-
-                // CR_SWAP_CONFLICT 错误
-                if (record.error === 'CR_SWAP_CONFLICT') return true;
-
-                // 其他错误且无进度
-                if (record.status === 'error' && record.loadedBytes === 0) return true;
-
-                return false;
-            }
-
             // HTML 转义
             escapeHtml(text) {
                 const div = document.createElement('div');
                 div.textContent = text;
                 return div.innerHTML;
-            }
-
-            // 处理 .crswap 冲突
-            handleCrSwapConflict(recordId, fileName) {
-                alert(
-                    '检测到上次下载未正常结束，存在临时文件冲突。\n\n' +
-                    '请按以下步骤操作：\n' +
-                    '1. 打开文件保存目录\n' +
-                    '2. 删除以 .crswap 结尾的临时文件\n' +
-                    '3. 点击"重新下载"开始新的下载\n\n' +
-                    `文件名：${fileName}`
-                );
-
-                // 清理不可用的 fileHandle
-                this.history.removeFileHandle(recordId).catch(() => {});
-
-                // 更新状态
-                this.history.update(recordId, {
-                    status: 'error',
-                    error: 'CR_SWAP_CONFLICT'
-                });
-                this.renderHistory();
             }
 
             // 从历史记录继续下载
@@ -1247,26 +1023,6 @@
                 try {
                     // 尝试从 IndexedDB 获取已保存的 fileHandle
                     let fileHandle = await this.history.getFileHandle(recordId);
-
-                    // 检测 .crswap 冲突
-                    if (fileHandle) {
-                        try {
-                            await fileHandle.getFile();
-                        } catch (e) {
-                            // .crswap 残留会导致 getFile() 失败
-                            if (e.name === 'NotReadableError' ||
-                                (e.message && (
-                                    e.message.toLowerCase().includes('swap') ||
-                                    e.message.toLowerCase().includes('readable') ||
-                                    e.message.toLowerCase().includes('lock')
-                                ))) {
-                                this.handleCrSwapConflict(recordId, record.fileName);
-                                return;
-                            }
-                            // 其他错误继续尝试
-                            console.warn('getFile() 检测异常:', e);
-                        }
-                    }
 
                     // 如果没有保存的 fileHandle，提示用户重新选择
                     if (!fileHandle) {
@@ -1353,25 +1109,10 @@
         document.addEventListener('DOMContentLoaded', () => {
             const manager = new DownloadManager();
 
-            // 异步检查浏览器兼容性（惰性检测）
-            manager.capability.checkFileSystemAccess().then(capability => {
-                if (!capability.usable) {
-                    document.getElementById('browserWarning').classList.add('show');
-                    // 根据不同原因显示不同提示
-                    let reasonText = '';
-                    if (capability.reason === 'VERSION_TOO_LOW') {
-                        reasonText = `当前 Chrome 版本 ${capability.version} 过低`;
-                    } else if (capability.reason === 'API_NOT_FUNCTIONAL') {
-                        reasonText = 'API 不可用';
-                    } else {
-                        reasonText = 'API 不支持';
-                    }
-                    document.getElementById('browserWarning').innerHTML = `
-                        <strong>浏览器兼容性提示：</strong>当前浏览器不支持断点续传功能（${reasonText}）。
-                        建议使用 Chrome 110+ 浏览器以获得完整功能。
-                    `;
-                }
-            });
+            // 检查浏览器兼容性
+            if (!manager.checkBrowserSupport()) {
+                document.getElementById('browserWarning').classList.add('show');
+            }
 
             // 绑定按钮事件
             document.getElementById('btnStart').addEventListener('click', () => manager.start());
