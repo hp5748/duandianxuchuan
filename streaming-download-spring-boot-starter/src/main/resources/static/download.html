@@ -215,6 +215,70 @@
             display: block;
         }
 
+        .download-settings {
+            background: #e8f4fd;
+            border: 1px solid #b8daff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .download-settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .download-settings-header h3 {
+            font-size: 14px;
+            color: #333;
+            margin: 0;
+        }
+
+        .download-settings-status {
+            font-size: 13px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .download-settings-status .dir-name {
+            color: #004085;
+            font-weight: 500;
+        }
+
+        .download-settings-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .download-settings-buttons .btn {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-set-dir {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-set-dir:hover:not(:disabled) {
+            background: #138496;
+        }
+
+        .btn-clear-dir {
+            background: transparent;
+            border: 1px solid #dc3545;
+            color: #dc3545;
+        }
+
+        .btn-clear-dir:hover {
+            background: #dc3545;
+            color: white;
+        }
+
         .history-section {
             margin-top: 30px;
             border-top: 1px solid #e0e0e0;
@@ -351,6 +415,19 @@
         <div id="browserWarning" class="browser-warning">
             <strong>浏览器兼容性提示：</strong>当前浏览器不支持 File System Access API，断点续传功能将不可用。
             建议使用 Chrome 86+ 或 Edge 86+ 浏览器。
+        </div>
+
+        <div id="downloadSettings" class="download-settings" style="display: none;">
+            <div class="download-settings-header">
+                <h3>📁 下载设置</h3>
+            </div>
+            <div class="download-settings-status">
+                <span id="dirStatusText">未设置默认下载目录</span>
+            </div>
+            <div class="download-settings-buttons" style="margin-top: 10px;">
+                <button class="btn btn-set-dir" id="btnSetDir">选择目录</button>
+                <button class="btn btn-clear-dir" id="btnClearDir" style="display: none;">清除目录</button>
+            </div>
         </div>
 
         <div class="input-group">
@@ -499,6 +576,42 @@
                 });
             }
 
+            // 保存默认目录句柄
+            async saveDirectoryHandle(handle) {
+                await this.initDB();
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(this.dbStore, 'readwrite');
+                    const store = tx.objectStore(this.dbStore);
+                    const request = store.put(handle, 'default_download_dir');
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            // 获取默认目录句柄
+            async getDirectoryHandle() {
+                await this.initDB();
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(this.dbStore, 'readonly');
+                    const store = tx.objectStore(this.dbStore);
+                    const request = store.get('default_download_dir');
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            // 删除默认目录句柄
+            async removeDirectoryHandle() {
+                await this.initDB();
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction(this.dbStore, 'readwrite');
+                    const store = tx.objectStore(this.dbStore);
+                    const request = store.delete('default_download_dir');
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
             // 获取所有记录
             list() {
                 const data = localStorage.getItem(this.storageKey);
@@ -605,6 +718,7 @@
                 this.abortController = null;
                 this.reader = null;
                 this.writer = null;
+                this.defaultDirHandle = null;
 
                 // UI 元素
                 this.urlInput = document.getElementById('urlInput');
@@ -618,6 +732,10 @@
                 this.btnPause = document.getElementById('btnPause');
                 this.btnResume = document.getElementById('btnResume');
                 this.btnCancel = document.getElementById('btnCancel');
+                this.btnSetDir = document.getElementById('btnSetDir');
+                this.btnClearDir = document.getElementById('btnClearDir');
+                this.dirStatusText = document.getElementById('dirStatusText');
+                this.downloadSettings = document.getElementById('downloadSettings');
                 this.history = new DownloadHistory();
                 this.currentRecordId = null;
             }
@@ -625,6 +743,80 @@
             // 检查浏览器兼容性
             checkBrowserSupport() {
                 return !!window.showSaveFilePicker;
+            }
+
+            // 检查是否支持目录选择
+            checkDirectorySupport() {
+                return !!window.showDirectoryPicker;
+            }
+
+            // 加载默认目录
+            async loadDefaultDirectory() {
+                try {
+                    const dirHandle = await this.history.getDirectoryHandle();
+                    if (dirHandle) {
+                        this.defaultDirHandle = dirHandle;
+                        await this.updateDirectoryStatus();
+                    }
+                } catch (e) {
+                    console.error('加载默认目录失败:', e);
+                }
+            }
+
+            // 设置默认目录
+            async setDefaultDirectory() {
+                try {
+                    const dirHandle = await window.showDirectoryPicker();
+                    await this.history.saveDirectoryHandle(dirHandle);
+                    this.defaultDirHandle = dirHandle;
+                    await this.updateDirectoryStatus();
+                } catch (e) {
+                    if (e.name !== 'AbortError') {
+                        console.error('设置默认目录失败:', e);
+                        alert('设置目录失败: ' + e.message);
+                    }
+                }
+            }
+
+            // 清除默认目录
+            async clearDefaultDirectory() {
+                try {
+                    await this.history.removeDirectoryHandle();
+                    this.defaultDirHandle = null;
+                    await this.updateDirectoryStatus();
+                } catch (e) {
+                    console.error('清除默认目录失败:', e);
+                }
+            }
+
+            // 更新目录状态显示
+            async updateDirectoryStatus() {
+                if (this.defaultDirHandle) {
+                    this.dirStatusText.innerHTML = `📁 下载到: <span class="dir-name">${this.escapeHtml(this.defaultDirHandle.name)}</span>`;
+                    this.btnClearDir.style.display = 'inline-block';
+                    this.btnSetDir.textContent = '更换目录';
+                } else {
+                    this.dirStatusText.textContent = '未设置默认下载目录，每次下载需选择位置';
+                    this.btnClearDir.style.display = 'none';
+                    this.btnSetDir.textContent = '选择目录';
+                }
+            }
+
+            // 检查目录权限
+            async checkDirectoryPermission() {
+                if (!this.defaultDirHandle) return false;
+
+                try {
+                    const permission = await this.defaultDirHandle.queryPermission({ mode: 'readwrite' });
+                    if (permission === 'granted') return true;
+
+                    // 请求权限
+                    const requestResult = await this.defaultDirHandle.requestPermission({ mode: 'readwrite' });
+                    return requestResult === 'granted';
+                } catch (e) {
+                    console.error('检查目录权限失败:', e);
+                    return false;
+                }
             }
 
             // 格式化字节数
@@ -716,11 +908,26 @@
                 }
 
                 try {
-                    // 选择保存位置
                     const fileName = this.extractFileName(url);
-                    this.fileHandle = await window.showSaveFilePicker({
-                        suggestedName: fileName
-                    });
+
+                    // 尝试使用默认目录
+                    if (this.defaultDirHandle) {
+                        const hasPermission = await this.checkDirectoryPermission();
+                        if (hasPermission) {
+                            // 在默认目录中创建文件
+                            this.fileHandle = await this.defaultDirHandle.getFileHandle(fileName, { create: true });
+                        } else {
+                            // 权限失效，回退到手动选择
+                            this.fileHandle = await window.showSaveFilePicker({
+                                suggestedName: fileName
+                            });
+                        }
+                    } else {
+                        // 没有默认目录，手动选择
+                        this.fileHandle = await window.showSaveFilePicker({
+                            suggestedName: fileName
+                        });
+                    }
 
                     // 重置状态
                     this.loadedBytes = 0;
@@ -1106,12 +1313,17 @@
         }
 
         // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const manager = new DownloadManager();
 
             // 检查浏览器兼容性
             if (!manager.checkBrowserSupport()) {
                 document.getElementById('browserWarning').classList.add('show');
+            } else {
+                // 显示下载设置区域
+                manager.downloadSettings.style.display = 'block';
+                // 加载默认目录
+                await manager.loadDefaultDirectory();
             }
 
             // 绑定按钮事件
@@ -1120,6 +1332,8 @@
             document.getElementById('btnResume').addEventListener('click', () => manager.resume());
             document.getElementById('btnCancel').addEventListener('click', () => manager.cancel());
             document.getElementById('btnClearHistory').addEventListener('click', () => manager.clearHistory());
+            document.getElementById('btnSetDir').addEventListener('click', () => manager.setDefaultDirectory());
+            document.getElementById('btnClearDir').addEventListener('click', () => manager.clearDefaultDirectory());
 
             // 初始化 UI
             manager.updateUI();
